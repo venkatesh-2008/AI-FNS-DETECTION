@@ -1,190 +1,182 @@
 import javax.swing.*;
 import java.awt.*;
-import java.net.URI;
-import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+public class FakeNewsDetector extends JFrame {
 
-public class Main extends JFrame {
+    private JTextArea newsArea;
+    private JLabel scoreLabel;
+    private JLabel predictionLabel;
 
-    // Replace with your NewsAPI Key
-    static String API_KEY = "YOUR_API_KEY";
+    private static final Set<String> FAKE_WORDS = Set.of(
+            "shocking", "miracle", "secret", "viral",
+            "unbelievable", "click here", "100% true",
+            "share immediately", "rumor", "fake", "exposed"
+    );
 
-    static String[] trustedSources = {
-            "bbc-news",
-            "reuters",
-            "associated-press",
-            "cnn",
-            "the-hindu",
-            "the-times-of-india"
-    };
+    private static final Set<String> TRUSTED_SOURCES = Set.of(
+            "bbc", "reuters", "ap", "the hindu",
+            "times of india", "ndtv"
+    );
 
-    JTextField headlineField;
-    JButton verifyButton;
-    JTextArea outputArea;
+    static class DetectionResult {
+        int score;
+        String status;
 
-    public Main() {
+        DetectionResult(int score, String status) {
+            this.score = score;
+            this.status = status;
+        }
+    }
 
-        setTitle("AI News Verifier");
-        setSize(700, 550);
+    public FakeNewsDetector() {
+
+        setTitle("Fake News Detector");
+        setSize(700, 500);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        JPanel topPanel = new JPanel(new BorderLayout(10,10));
+        Font font = new Font("Arial", Font.PLAIN, 16);
 
-        JLabel label = new JLabel("Enter News Headline:");
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
 
-        headlineField = new JTextField();
+        JLabel heading = new JLabel("Fake News Detector", SwingConstants.CENTER);
+        heading.setFont(new Font("Arial", Font.BOLD, 22));
+        panel.add(heading, BorderLayout.NORTH);
 
-        verifyButton = new JButton("Verify News");
+        newsArea = new JTextArea();
+        newsArea.setFont(font);
+        newsArea.setLineWrap(true);
+        newsArea.setWrapStyleWord(true);
 
-        topPanel.add(label, BorderLayout.NORTH);
-        topPanel.add(headlineField, BorderLayout.CENTER);
-        topPanel.add(verifyButton, BorderLayout.EAST);
+        JScrollPane scrollPane = new JScrollPane(newsArea);
+        panel.add(scrollPane, BorderLayout.CENTER);
 
-        outputArea = new JTextArea();
-        outputArea.setEditable(false);
-        outputArea.setFont(new Font("Monospaced", Font.PLAIN, 14));
+        JPanel bottomPanel = new JPanel(new GridLayout(4, 1, 5, 5));
 
-        JScrollPane scroll = new JScrollPane(outputArea);
+        JButton detectButton = new JButton("Detect News");
+        JButton clearButton = new JButton("Clear");
 
-        add(topPanel, BorderLayout.NORTH);
-        add(scroll, BorderLayout.CENTER);
+        detectButton.setFont(font);
+        clearButton.setFont(font);
 
-        verifyButton.addActionListener(e -> {
+        scoreLabel = new JLabel("Confidence Score : ");
+        predictionLabel = new JLabel("Prediction : ");
 
-            String headline = headlineField.getText().trim();
+        scoreLabel.setFont(font);
+        predictionLabel.setFont(font);
 
-            if(headline.isEmpty()){
-                JOptionPane.showMessageDialog(this,
-                        "Please enter a news headline.");
-                return;
-            }
+        detectButton.addActionListener(e -> detectNews());
 
-            outputArea.setText("Checking...\n");
-
-            new Thread(() -> {
-
-                try {
-                    verify(headline);
-                } catch (Exception ex) {
-
-                    SwingUtilities.invokeLater(() ->
-                            outputArea.setText(
-                                    "Error:\n" + ex.getMessage()));
-
-                }
-
-            }).start();
-
+        clearButton.addActionListener(e -> {
+            newsArea.setText("");
+            scoreLabel.setText("Confidence Score : ");
+            predictionLabel.setText("Prediction : ");
+            predictionLabel.setForeground(Color.BLACK);
         });
 
+        bottomPanel.add(detectButton);
+        bottomPanel.add(clearButton);
+        bottomPanel.add(scoreLabel);
+        bottomPanel.add(predictionLabel);
+
+        panel.add(bottomPanel, BorderLayout.SOUTH);
+
+        add(panel);
     }
 
-    public void verify(String headline) throws Exception {
+    private void detectNews() {
 
-        String url =
-                "https://newsapi.org/v2/everything?q="
-                        + URLEncoder.encode(headline,
-                        StandardCharsets.UTF_8)
-                        + "&language=en&pageSize=10&apiKey="
-                        + API_KEY;
+        String news = newsArea.getText().trim();
 
-        HttpClient client = HttpClient.newHttpClient();
-
-        HttpRequest request =
-                HttpRequest.newBuilder()
-                        .uri(URI.create(url))
-                        .GET()
-                        .build();
-
-        HttpResponse<String> response =
-                client.send(request,
-                        HttpResponse.BodyHandlers.ofString());
-
-        JsonObject json =
-                JsonParser.parseString(response.body())
-                        .getAsJsonObject();
-
-        JsonArray articles = json.getAsJsonArray("articles");
-
-        StringBuilder result = new StringBuilder();
-
-        boolean trusted = false;
-
-        result.append("Trusted Sources Found\n");
-        result.append("=========================\n\n");
-
-        if (articles != null) {
-
-            for (int i = 0; i < articles.size(); i++) {
-
-                JsonObject article =
-                        articles.get(i).getAsJsonObject();
-
-                JsonObject source =
-                        article.getAsJsonObject("source");
-
-                String sourceId =
-                        source.get("id").isJsonNull()
-                                ? ""
-                                : source.get("id").getAsString();
-
-                String sourceName =
-                        source.get("name").getAsString();
-
-                String title =
-                        article.get("title").getAsString();
-
-                for (String t : trustedSources) {
-
-                    if (t.equalsIgnoreCase(sourceId)) {
-
-                        trusted = true;
-
-                        result.append("---------------------------------\n");
-                        result.append("Source : ")
-                                .append(sourceName)
-                                .append("\n");
-
-                        result.append("Title  : ")
-                                .append(title)
-                                .append("\n\n");
-
-                    }
-
-                }
-
-            }
-
+        if (news.isEmpty()) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Please enter some news.",
+                    "Input Required",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
         }
 
-        result.append("\n===========================\n");
+        DetectionResult result = analyze(news);
 
-        if (trusted)
-            result.append("RESULT : TRUE NEWS");
-        else
-            result.append("RESULT : UNVERIFIED");
+        scoreLabel.setText("Confidence Score : " + result.score + "%");
+        predictionLabel.setText("Prediction : " + result.status);
 
-        SwingUtilities.invokeLater(() ->
-                outputArea.setText(result.toString()));
+        if (result.score >= 70) {
+            predictionLabel.setForeground(Color.RED);
+        } else if (result.score >= 40) {
+            predictionLabel.setForeground(Color.ORANGE);
+        } else {
+            predictionLabel.setForeground(new Color(0, 128, 0));
+        }
+    }
 
+    public static DetectionResult analyze(String news) {
+
+        String text = news.toLowerCase();
+        int score = 0;
+
+        for (String word : FAKE_WORDS) {
+            if (text.contains(word)) {
+                score += 10;
+            }
+        }
+
+        int capitals = 0;
+        for (char c : news.toCharArray()) {
+            if (Character.isUpperCase(c)) {
+                capitals++;
+            }
+        }
+
+        if ((double) capitals / news.length() > 0.30) {
+            score += 15;
+        }
+
+        long exclamationCount = news.chars()
+                .filter(ch -> ch == '!')
+                .count();
+
+        if (exclamationCount >= 3) {
+            score += 15;
+        }
+
+        Pattern pattern = Pattern.compile("(http|https)://\\S+");
+        Matcher matcher = pattern.matcher(news);
+
+        if (matcher.find()) {
+            score += 10;
+        }
+
+        for (String source : TRUSTED_SOURCES) {
+            if (text.contains(source)) {
+                score -= 20;
+            }
+        }
+
+        score = Math.max(0, Math.min(score, 100));
+
+        String status;
+
+        if (score >= 70) {
+            status = "HIGH RISK (Likely Fake)";
+        } else if (score >= 40) {
+            status = "MEDIUM RISK";
+        } else {
+            status = "LOW RISK (Likely Real)";
+        }
+
+        return new DetectionResult(score, status);
     }
 
     public static void main(String[] args) {
 
         SwingUtilities.invokeLater(() -> {
-
-            new Main().setVisible(true);
-
+            new FakeNewsDetector().setVisible(true);
         });
 
     }
-
 }
